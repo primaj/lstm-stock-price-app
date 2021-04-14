@@ -13,7 +13,7 @@ trained = False
 
 # Define the sidebar ---------------------------------------------------------------------------------------------------
 st.sidebar.markdown('# Options')
-company = st.sidebar.text_input('Enter a ticker:', 'TSLA')
+company = st.sidebar.text_input('Enter a ticker:', 'AAPL')
 plot_history = st.sidebar.checkbox("Plot History?")
 
 st.sidebar.markdown('### Training Data Range')
@@ -38,6 +38,7 @@ combine_training = st.sidebar.checkbox("Combine Training?")
 st.title('🚀 LSTM Stock Price Prediction 🚀')
 st.markdown(f'## For ticker: {company}')
 
+st.markdown('*Obligatory this is not financial advice*')
 # Read the data from yahoo
 data = web.DataReader(company, 'yahoo', training_start, training_end)
 
@@ -111,19 +112,19 @@ if train:
         st.success("Model Trained!")
         trained = True
 
+# Only do if we have a model trained
 if trained:
+    # Read the test data from yahoo
     test_data = web.DataReader(company, 'yahoo', testing_start, testing_end)
 
     actual_prices = test_data['Close'].values
 
     total_dataset = pd.concat((data['Close'], test_data['Close']), axis=0)
 
+    # Define the data to use for predictions
     model_inputs = total_dataset[len(total_dataset) - len(test_data) - prediction_days:].values
-
     model_inputs = model_inputs.reshape(-1, 1)
     model_inputs = scaler.transform(model_inputs)
-
-    # Make predictions
 
     X_test = [
         model_inputs[X - prediction_days:X, 0]
@@ -133,17 +134,11 @@ if trained:
     X_test = np.array(X_test)
     X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
 
+    # Predict on the data and inverse transform
     predicted_prices = model.predict(X_test)
     predicted_prices = scaler.inverse_transform(predicted_prices)
 
-    f'''
-    Actual data shape: {test_data.shape}
-
-    -------------------------------------------------------
-
-    Prediction data shape: {predicted_prices.shape}
-    '''
-
+    # Create the plotting data
     test_data['Predicted Price'] = predicted_prices
     test_data.rename(columns={'Close': 'Actual Price (Testing)'}, inplace=True)
     test_data['date'] = test_data.index
@@ -151,20 +146,27 @@ if trained:
     plot_data = pd.melt(test_data, id_vars=['date'],
                         value_vars=['Actual Price (Testing)', 'Predicted Price'], value_name='value')
 
+    # add the training data to plot data if selected
     if combine_training:
         data['date'] = data.index
         data.rename(columns={'Close': 'Actual Price (Training)'}, inplace=True)
         long_training = pd.melt(data, id_vars=['date'], value_vars=['Actual Price (Training)'], value_name='value')
         plot_data = pd.concat([plot_data, long_training])
 
+    # Define plotly plot
     pred_fig = px.line(plot_data, x='date', y='value', color='variable')
     st.plotly_chart(pred_fig)
 
     # Predicting next day
-    # real_data = [model_inputs[len(model_inputs) + 1 - prediction_days:len(model_inputs + 1), 0]]
-    # real_data = np.array(real_data)
-    # real_data = np.reshape(real_data, (real_data.shape[0], real_data.shape[1], 1))
-    #
-    # prediction = model.predict(real_data)
-    # prediction = scaler.inverse_transform(prediction)
-    # print(f"Prediction: {prediction}")
+    real_data = [model_inputs[len(model_inputs) + 1 - prediction_days:len(model_inputs + 1), 0]]
+    real_data = np.array(real_data)
+    real_data = np.reshape(real_data, (real_data.shape[0], real_data.shape[1], 1))
+
+    prediction = model.predict(real_data)
+    prediction = scaler.inverse_transform(prediction)
+    prediction_date = (max(test_data['date']) + dt.timedelta(days=1)).date()
+
+    f'''
+    ### Prediction for next day ({prediction_date}):
+    **$ {round(float(prediction[0]), 2)}**
+    '''
